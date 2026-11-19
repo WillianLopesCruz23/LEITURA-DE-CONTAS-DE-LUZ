@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Automação de Contas de Energia - DMAE</title>
+  <!-- Bibliotecas CDN para leitura de PDF e geração de planilhas Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --primary: #0b4f8a;
+      --primary-dark: #073763;
+      --accent: #00897b;
+      --bg: #f3f6fa;
+      --card: #ffffff;
+      --border: #d8e1eb;
+      --text: #1e293b;
+      --muted: #64748b;
+    }
+    * { box-sizing: border-box; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); }
+    header {
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      color: #fff;
+      padding: 20px 32px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    header h1 { margin: 0; font-size: 1.35rem; font-weight: 600; }
+    header p { margin: 4px 0 0; font-size: 0.88rem; opacity: 0.9; }
+    .container { max-width: 1440px; margin: 24px auto; padding: 0 20px; }
+    .grid-top { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px; }
+    @media (max-width: 960px) { .grid-top { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .card h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--primary-dark); }
+    .dropzone {
+      border: 2px dashed #7aa7d2;
+      background: #f8fbff;
+      border-radius: 8px;
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      background: #e8f2fc;
+      border-color: var(--primary);
+    }
+    .dropzone strong { display: block; font-size: 1.05rem; color: var(--primary); margin-bottom: 6px; }
+    .dropzone span { font-size: 0.85rem; color: var(--muted); }
+    .controls { display: flex; flex-direction: column; gap: 12px; }
+    .field-row { display: flex; gap: 10px; align-items: center; }
+    .field-row label { font-size: 0.88rem; font-weight: 600; min-width: 110px; }
+    .field-row input, .field-row select {
+      flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.92rem;
+    }
+    .btn {
+      border: none; border-radius: 6px; padding: 11px 16px; font-size: 0.92rem; font-weight: 600;
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      transition: background 0.15s;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-accent { background: var(--accent); color: #fff; }
+    .btn-accent:hover { background: #00695c; }
+    .btn-danger { background: #dc2626; color: #fff; padding: 5px 9px; font-size: 0.8rem; }
+    .btn-outline { background: #fff; border: 1px solid var(--border); color: var(--text); }
+    .btn-outline:hover { background: #f1f5f9; }
+    .stats-bar {
+      display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+      font-size: 0.88rem; color: var(--muted);
+    }
+    .badge {
+      background: #e2e8f0; color: #1e293b; padding: 4px 10px; border-radius: 20px; font-weight: 600;
+    }
+    .badge.ok { background: #dcfce7; color: #166534; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; white-space: nowrap; }
+    th {
+      background: #eaf1f8; color: var(--primary-dark); font-weight: 600;
+      padding: 9px 8px; border-bottom: 1px solid var(--border); text-align: left;
+    }
+    td { padding: 6px 8px; border-bottom: 1px solid #eef2f6; }
+    tr:hover td { background: #f8fafc; }
+    td input {
+      width: 82px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px;
+      font-size: 0.82rem; text-align: right;
+    }
+    td input.txt { width: 110px; text-align: left; }
+    td input.code { width: 65px; text-align: center; font-weight: 600; }
+    .log-box {
+      margin-top: 12px; font-size: 0.82rem; color: var(--muted);
+      max-height: 90px; overflow-y: auto; background: #f8fafc; padding: 8px 12px; border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>DMAE — Leitor Automático de Contas de Energia (CEEE Equatorial)</h1>
+    <p>Importe os PDFs das faturas, confira os dados extraídos e baixe as duas planilhas preenchidas.</p>
+  </div>
+  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <button class="btn btn-accent" onclick="downloadConsEn()">⬇ Baixar ConsEn HV (Por Estação)</button>
+    <button class="btn btn-primary" onclick="downloadCustoMensal()">⬇ Baixar Custo Mensal (Por Mês)</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="grid-top">
+    <div class="card">
+      <h2>1. Anexar Contas de Luz (PDF)</h2>
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+        <strong>Clique aqui ou arraste os arquivos PDF das faturas</strong>
+        <span>Suporta múltiplos arquivos simultaneamente (ex.: 6102-out25.pdf, 100-out25.pdf...)</span>
+        <input type="file" id="fileInput" accept="application/pdf" multiple style="display:none" />
+      </div>
+      <div class="log-box" id="logBox">Aguardando arquivos PDF...</div>
+    </div>
+
+    <div class="card">
+      <h2>2. Configurações das Planilhas</h2>
+      <div class="controls">
+        <div class="field-row">
+          <label for="anoRef">Ano de Referência:</label>
+          <input type="number" id="anoRef" value="2025" min="2020" max="2035" />
+        </div>
+        <div class="field-row">
+          <label for="filtroMes">Filtrar Tabela:</label>
+          <select id="filtroMes" onchange="renderTable()">
+            <option value="TODOS">Todos os meses carregados</option>
+            <option value="JAN">Janeiro</option><option value="FEV">Fevereiro</option>
+            <option value="MAR">Março</option><option value="ABR">Abril</option>
+            <option value="MAIO">Maio</option><option value="JUN">Junho</option>
+            <option value="JUL">Julho</option><option value="AGO">Agosto</option>
+            <option value="SET">Setembro</option><option value="OUT">Outubro</option>
+            <option value="NOV">Novembro</option><option value="DEZ">Dezembro</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:4px;">
+          <button class="btn btn-outline" style="flex:1" onclick="clearAll()">Limpar Lista</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+      <h2 style="margin:0;">3. Faturas Extraídas (Editável antes do Download)</h2>
+      <div class="stats-bar" style="margin:0;">
+        <span class="badge ok" id="countBadge">0 faturas carregadas</span>
+        <span class="badge" id="totalBadge">Total Geral: R$ 0,00</span>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Arquivo</th>
+            <th>Cód.</th>
+            <th>Estação / Local</th>
+            <th>UC</th>
+            <th>Mês</th>
+            <th>Ano</th>
+            <th>Período</th>
+            <th>Dem. Ponta (kW)</th>
+            <th>Dem. F.Ponta (kW)</th>
+            <th>Demanda (R$)</th>
+            <th>Cons. Ponta (kWh)</th>
+            <th>Cons. F.Ponta (kWh)</th>
+            <th>Cons. Total (kWh)</th>
+            <th>Cons. Ponta (R$)</th>
+            <th>Cons. F.Ponta (R$)</th>
+            <th>Cons. Total (R$)</th>
+            <th>Reativo (R$)</th>
+            <th>Ilum. Púb. (R$)</th>
+            <th>Outros / Subv. (R$)</th>
+            <th>Créditos (R$)</th>
+            <th>TOTAL FATURA (R$)</th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="22" style="text-align:center; padding:24px; color:#64748b;">Nenhuma conta importada ainda.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// Base completa de estações extraída de Custo Mensal_2025.xls
+const STATIONS_CATALOG = [
+  {"sistema":"SISTEMA MOINHOS DE VENTO","codigo":"100","local":"100-ETA   Moinhos de Vento","uc":"5114373-9","uc_clean":"51143739","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA MOINHOS DE VENTO","codigo":"101","local":"101-EBAB Moinhos de Vento","uc":"5110739-2","uc_clean":"51107392","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA MOINHOS DE VENTO","codigo":"50","local":"50-DVT-Proteção Catódica adut.EBAB MV","uc":"6405431-4","uc_clean":"64054314","ope":"O","med":"BT"},
+  {"sistema":"SISTEMA MOINHOS DE VENTO","codigo":"100R3","local":"100R3-DVT-Amostragem Rua 24 Outubro 207","uc":"6405456-0","uc_clean":"64054560","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA MOINHOS DE VENTO","codigo":"100R4","local":"100R4-CHAFARIZ Glênio Peres","uc":"100713219-9","uc_clean":"1007132199","ope":"O","med":"BT"},
+  {"sistema":"SISTEMA MOINHOS DE VENTO","codigo":"103","local":"103-EBAT Bordini","uc":"6343727-9","uc_clean":"63437279","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"200","local":"200-ETA São João","uc":"6347245-7","uc_clean":"63472457","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"201","local":"201-EBAB São João","uc":"5118376-5","uc_clean":"51183765","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"202","local":"202-EBAT Luzitana","uc":"6338435-3","uc_clean":"63384353","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"205","local":"205-EBAT Ipiranga  I","uc":"5879938-9","uc_clean":"58799389","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"206","local":"206-EBAT Ipiranga  II","uc":"6094047-6","uc_clean":"60940476","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"207","local":"207-EBAT  Gioconda","uc":"6312643-5","uc_clean":"63126435","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"207R2","local":"207R2-RESERV Ipiranga III","uc":"6405459-4","uc_clean":"64054594","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"208","local":"208-EBAT Baltazar de Bem","uc":"6404791-1","uc_clean":"64047911","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"209","local":"209-EBAT Sarandi","uc":"6568912-7","uc_clean":"65689127","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"209R","local":"209R-RESERV Cota 70 - Ary Tarrago","uc":"6405465-9","uc_clean":"64054659","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"210","local":"210-EBAT Ouro Preto","uc":"6336390-9","uc_clean":"63363909","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"210R","local":"210R-RESERV Cota 48","uc":"6405470-5","uc_clean":"64054705","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"211","local":"211-EBAT  Jaú","uc":"6404810-1","uc_clean":"64048101","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"212","local":"212-EBAT Manoel Elias  I","uc":"6569024-9","uc_clean":"65690249","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"212R","local":"212R-RESERV  Manoel Elias  II","uc":"6405475-6","uc_clean":"64054756","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"213","local":"213-EBAT Manoel Elias  II","uc":"6569053-2","uc_clean":"65690532","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"215","local":"215-EBAT Manoel Elias  III","uc":"6404814-4","uc_clean":"64048144","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA SÃO JOÃO","codigo":"216","local":"216-EBAT Parque Santa Fé","uc":"6404817-9","uc_clean":"64048179","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"300","local":"300-ETA    Menino Deus","uc":"5114354-2","uc_clean":"51143542","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"301","local":"301-EBAB  Menino Deus","uc":"5114334-8","uc_clean":"51143348","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"302","local":"302-EBAT Padre Cacique","uc":"6309140-2","uc_clean":"63091402","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"302R","local":"302R-RESERV Marechal Hermes","uc":"6405478-1","uc_clean":"64054781","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"304","local":"304-EBAT Morro Osso  I","uc":"6308711-1","uc_clean":"63087111","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"305","local":"305-EBAT Morro Osso  II","uc":"6404850-1","uc_clean":"64048501","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"306","local":"306-EBAT Santa Tereza  I","uc":"6566901-1","uc_clean":"65669011","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"307","local":"307-EBAT Santa Tereza  II","uc":"6309312-0","uc_clean":"63093120","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"308","local":"308-EBAT Santa Tereza  III","uc":"6100142-2","uc_clean":"61001422","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"309","local":"309-EBAT Fernando Machado","uc":"6335105-6","uc_clean":"63351056","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"312","local":"312-EBAT Caieira","uc":"6088207-7","uc_clean":"60882077","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"312R1","local":"312R1-RESERV Delfino Riet","uc":"6405498-5","uc_clean":"64054985","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"312R2","local":"312R2-RESERV Caldre e Fiao","uc":"6405488-8","uc_clean":"64054888","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"314","local":"314-EBAT Catumbi-Orfanotrófio","uc":"6319407-4","uc_clean":"63194074","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"314R1","local":"314R1-RESERV Clemente Pinto","uc":"6405502-7","uc_clean":"64055027","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"314R2","local":"314R2-RESERV Orfanatrófio","uc":"6405504-3","uc_clean":"64055043","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"317","local":"317-EBAT Oscar Pereira","uc":"6325720-3","uc_clean":"63257203","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"318","local":"318-EBAT Graciliano Ramos","uc":"6404860-8","uc_clean":"64048608","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"321","local":"321-EBAT São Caetano  I","uc":"5265960-7","uc_clean":"52659607","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"326","local":"326-EBAT Nonoai  I","uc":"6325666-5","uc_clean":"63256665","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"327","local":"327-EBAT Cidade Jardim","uc":"6404866-7","uc_clean":"64048667","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"328","local":"328-EBAT São Jorge I","uc":"5257421-1","uc_clean":"52574211","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"329","local":"329-EBAT São Jorge II","uc":"6325430-1","uc_clean":"63254301","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"331","local":"331-EBAT Belém Velho II","uc":"6325639-8","uc_clean":"63256398","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"332","local":"332-EBAT Monte Cristo","uc":"6404872-1","uc_clean":"64048721","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"333","local":"333-EBAT São Manoel","uc":"5117841-9","uc_clean":"51178419","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"335","local":"335-EBAT Cristiano Fischer","uc":"5117852-4","uc_clean":"51178524","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"336","local":"336-EBAT São José  II","uc":"6322763-1","uc_clean":"63227631","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"340","local":"340-EBAT São Luiz","uc":"6098163-6","uc_clean":"60981636","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"341","local":"341-EBAT Menina Alvira","uc":"6404882-9","uc_clean":"64048829","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"344","local":"344-EBAT Guttemberg","uc":"6312685-1","uc_clean":"63126851","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"346","local":"346-EBAT Jardim Ipê","uc":"6311013-0","uc_clean":"63110130","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"347","local":"347-EBAT Juvenal Cruz - Cortel","uc":"6312580-3","uc_clean":"63125803","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"348","local":"348-EBAT Vila Brasília","uc":"6312788-1","uc_clean":"63127881","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"349","local":"349-EBAT Glorinha","uc":"6239360-0","uc_clean":"62393600","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"350","local":"350-EBAT Carlos Gomes","uc":"6404888-8","uc_clean":"64048888","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"351","local":"351-EBAT Nonoai  II","uc":"6404893-4","uc_clean":"64048934","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"352","local":"352-EBAT Colina do Prado","uc":"6871978-7","uc_clean":"68719787","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"353","local":"353-EBAT Vila Sargentos  I","uc":"6311227-2","uc_clean":"63112272","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"355","local":"355-EBAT Vila Boa Vista","uc":"6404899-3","uc_clean":"64048993","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"356","local":"356-EBAT 1º de Maio","uc":"6325691-6","uc_clean":"63256916","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"356R4","local":"356R4-RESERV  Pedra Redonda","uc":"6405515-9","uc_clean":"64055159","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"356R7","local":"356R7-RESERV Embratel","uc":"6405510-8","uc_clean":"64055108","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"357","local":"357-EBAT São José - Cota 157","uc":"6311175-6","uc_clean":"63111756","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"358","local":"358-EBAT São José - Cota 200","uc":"6404908-6","uc_clean":"64049086","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"359","local":"359-EBAT Chácara dos Bombeiros","uc":"6409841-9","uc_clean":"64098419","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"360","local":"360-EBAT Cascatinha","uc":"6187278-4","uc_clean":"61872784","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA MENINO DEUS","codigo":"361","local":"361-EBAT Vila Sargentos  II","uc":"6404916-7","uc_clean":"64049167","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"400","local":"400-ETA   Belém Novo","uc":"5262867-1","uc_clean":"52628671","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"401","local":"401-EBAB  Belém Novo","uc":"6840202-3","uc_clean":"68402023","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"402R","local":"402R-RESERV Restinga","uc":"7159191-5","uc_clean":"71591915","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"406","local":"406-EBAT Altos do Ipê","uc":"6404919-1","uc_clean":"64049191","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"407","local":"407-EBAT Parque Lavoura","uc":"6404923-0","uc_clean":"64049230","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"409","local":"409-EBAT Ipanema Garden","uc":"6404931-1","uc_clean":"64049311","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"410","local":"410-EBAT Vila Castelo","uc":"6404940-0","uc_clean":"64049400","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"411R","local":"411R-RESERV Boa Vista","uc":"6405521-3","uc_clean":"64055213","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"412","local":"412-EBAT Luis Betiol","uc":"6404948-5","uc_clean":"64049485","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"413","local":"413-EBAT Restinga  II","uc":"6322800-9","uc_clean":"63228009","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"414","local":"414-EBAT Pitinga","uc":"6101465-6","uc_clean":"61014656","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"414R","local":"414R-RESERV Panorama Pereira","uc":"6409861-3","uc_clean":"64098613","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"415","local":"415-EBAT Cristiano Kraemer  I","uc":"6404954-0","uc_clean":"64049540","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"416","local":"416-EBAT Beco do Armando","uc":"6404958-9","uc_clean":"64049589","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"417","local":"417-EBAT Retiro da Ponta Grossa","uc":"6404966-3","uc_clean":"64049663","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"420","local":"420-EBAT Santa Rita  I","uc":"6404969-8","uc_clean":"64049698","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"421","local":"421-EBAT Santa Rita  II","uc":"6347964-8","uc_clean":"63479648","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"422","local":"422-EBAT João de Oliveira Remião III","uc":"6295109-2","uc_clean":"62951092","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"425","local":"425-EBAT Cristiano Kraemer  IV","uc":"100526077-7","uc_clean":"1005260777","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"426","local":"426-ETA Belém Novo II - compacta","uc":"100544240-9","uc_clean":"1005442409","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA BELÉM NOVO","codigo":"900","local":"900- ETA Heitor Vieira","uc":"100788099-3","uc_clean":"1007880993","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA LOMBA DO SABÀO","codigo":"500","local":"500-ETA  Lomba do Sabão","uc":"6100723-4","uc_clean":"61007234","ope":"TA","med":"BT"},
+  {"sistema":"SISTEMA LOMBA DO SABÀO","codigo":"503","local":"503-EBAT Beco dos Marianos","uc":"6404978-7","uc_clean":"64049787","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA LOMBA DO SABÀO","codigo":"504","local":"504-EBAT Dolores Duran  I","uc":"6568326-9","uc_clean":"65683269","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA LOMBA DO SABÀO","codigo":"505","local":"505-EBAT Dolores Duran  II","uc":"6310834-8","uc_clean":"63108348","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA LOMBA DO SABÀO","codigo":"505R1","local":"505R1-RESERV Remiao  I","uc":"1000564018","uc_clean":"1000564018","ope":"R","med":"BT"},
+  {"sistema":"SISTEMA LOMBA DO SABÀO","codigo":"515","local":"515-EBAT Beco do Davi","uc":"6409850-8","uc_clean":"64098508","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA ILHA DA PINTADA","codigo":"600","local":"600-ETA Ilha da Pintada","uc":"6314822-6","uc_clean":"63148226","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA ILHA DA PINTADA","codigo":"602","local":"602-EBAT Ilhas","uc":"6405089-1","uc_clean":"64050891","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"700","local":"700-ETA Tristeza","uc":"6309374-0","uc_clean":"63093740","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"701","local":"701-EBAB Tristeza","uc":"5286366-2","uc_clean":"52863662","ope":"TA","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"703","local":"703-EBAT Jardim Isabel I","uc":"64098530-2","uc_clean":"640985302","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"704","local":"704-EBAT Jardim Isabel II","uc":"6409855-9","uc_clean":"64098559","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"705","local":"705-EBAT Balneários","uc":"6100528-2","uc_clean":"61005282","ope":"BA","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"706","local":"706-EBAT Praça Moema","uc":"6405103-0","uc_clean":"64051030","ope":"BA","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2051","local":"2051-EBE  São Francisco","uc":"6405109-9","uc_clean":"64051099","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2401","local":"2401-EBE Nova Santa Rosa","uc":"6405115-3","uc_clean":"64051153","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2402","local":"2402-EBE Nova Brasília","uc":"6405121-8","uc_clean":"64051218","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2403","local":"2403-EBE Asa Branca","uc":"5682641-9","uc_clean":"56826419","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2502","local":"2502-EBE Porto Seco","uc":"7219991-1","uc_clean":"72199911","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3055","local":"3055-EBE Padre Voguel","uc":"6570023-6","uc_clean":"65700236","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4151","local":"4151-EBE Baronesa Gravataí","uc":"5118369-2","uc_clean":"51183692","ope":"BE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4152","local":"4152-EBE Gaspar Martins","uc":"6345078-0","uc_clean":"63450780","ope":"BE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4153","local":"4153-EBE Barros Cassal","uc":"6343681-7","uc_clean":"63436817","ope":"BE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4154","local":"4154-EBE Ponta da Cadeia","uc":"6336498-1","uc_clean":"63364981","ope":"BE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4155","local":"4155-EBE C-1","uc":"6160999-4","uc_clean":"61609994","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4156","local":"4156-EBE Cristal - C-2","uc":"6221087-4","uc_clean":"62210874","ope":"BE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4158","local":"4158-EBE Ponta Grossa  I","uc":"6620384-8","uc_clean":"66203848","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4159","local":"4159-EBE Restinga","uc":"6911490-1","uc_clean":"69114901","ope":"BE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"5051","local":"5051-EBE Vila Hipica","uc":"6569630-1","uc_clean":"65696301","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"6101","local":"6101-EBE  1 S","uc":"6405136-6","uc_clean":"64051366","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"6102","local":"6102-EBE  2 S","uc":"6100048-5","uc_clean":"61000485","ope":"BE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"6103","local":"6103-EBE  3 S","uc":"6405141-2","uc_clean":"64051412","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"6104","local":"6104-EBE  4 S","uc":"6310234-0","uc_clean":"63102340","ope":"BE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"6105","local":"6105-EBE  5 S","uc":"6566982-7","uc_clean":"65669827","ope":"BE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"6106","local":"6106-EBE Portal dos Bettios I","uc":"100504789-5","uc_clean":"1005047895","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"7051","local":"7051-EBE Ponta Grossa  II","uc":"6654490-4","uc_clean":"66544904","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"7053","local":"7053-EBE Chapeu do Sol","uc":"6620371-6","uc_clean":"66203716","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"7451","local":"7451-EBE Parque do Rincão  I","uc":"7105226","uc_clean":"7105226","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"7452","local":"7452-EBE Parque do Rincão  II","uc":"1003004013","uc_clean":"1003004013","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"8051","local":"8051-EBE 1 - Belém Novo  I  (915)","uc":"6405148-0","uc_clean":"64051480","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"8052","local":"8052-EBE 2 - Belém Novo  II  (L 1)","uc":"6405195-1","uc_clean":"64051951","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"9051","local":"9051-EBE Lami","uc":"6405200-1","uc_clean":"64052001","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"9052","local":"9052-EBE Jardim Floresta","uc":"6405205-2","uc_clean":"64052052","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"9054","local":"9054-EBE Sapolândia","uc":"6405235-4","uc_clean":"64052354","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"11051","local":"11051-EBE Irmãos Maristas  I","uc":"100517226-6","uc_clean":"1005172266","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"11052","local":"11052-EBE Irmãos Maristas  II","uc":"100519645-9","uc_clean":"1005196459","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"11101","local":"11101-EBE Raul Cauduro","uc":"6763856-2","uc_clean":"67638562","ope":"BE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2050","local":"2050 - ETE Rubem Berta","uc":"5219656-9","uc_clean":"52196569","ope":"TE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2100","local":"2100 - ETE Parque Arvoredo","uc":"6312123-9","uc_clean":"63121239","ope":"TE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2350","local":"2350 - ETE  Bosque","uc":"6405237-1","uc_clean":"64052371","ope":"TE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2500","local":"2500-ETE Sarandi","uc":"6499006-1","uc_clean":"64990061","ope":"TE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3050","local":"3050-ETE São João/Navegantes","uc":"5117858-3","uc_clean":"51178583","ope":"TE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4100","local":"4100-ETE Esmeralda","uc":"6405372-5","uc_clean":"64053725","ope":"TE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"4150","local":"4150 -ETE Serraria","uc":"6381134-1","uc_clean":"63811341","ope":"TE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"7450","local":"7450-ETE Chácara das Nascentes","uc":"69457921","uc_clean":"69457921","ope":"TE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"8050","local":"8050-ETE Belem Novo","uc":"6186822-1","uc_clean":"61868221","ope":"TE","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"9050","local":"9050-ETE Lami","uc":"6405382-2","uc_clean":"64053822","ope":"TE","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"2","local":"2 - C-PATRI - Coordenacao de Patrimonio","uc":"6405384-9","uc_clean":"64053849","ope":"AD","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"5","local":"5 - GDCO - Gerencia de Distribuicao e Coleta","uc":"7250957-1","uc_clean":"72509571","ope":"AD","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"12","local":"12 - GCON - Gerencia de Gestao de Consumo","uc":"6335038-6","uc_clean":"63350386","ope":"AD","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"13","local":"13 - GARE - Gerencia de Arrecadacao - Loja 1","uc":"6405386-5","uc_clean":"64053865","ope":"AD","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"16","local":"16 - GATE - Gerencia de Gestao Ambiental e Tratamento de Esgoto","uc":"6309797-4","uc_clean":"63097974","ope":"AD","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"21","local":"21 - C-SERVAP - Coordenacao de Servicos de Apoio","uc":"6405388-1","uc_clean":"64053881","ope":"AD","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"34","local":"34 - GMAN/GCON - Gerencia de Manutencao e Gerencia de Consumo","uc":"7250888-4","uc_clean":"72508884","ope":"AD","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"37","local":"37 - C-PATRI - Coordenacao de Patrimonio","uc":"6405390-3","uc_clean":"64053903","ope":"AD","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"38","local":"38 - GMAN/GDCE - Gerencia de Manutencao e Gerencia Distrital Centro de Esgoto","uc":"7250899-0","uc_clean":"72508990","ope":"AD","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"39","local":"39 - DD/GEPO/GPLA - Diretoria de Desenvolvimento, Gerencia de Projeto-Obras e Gerencia de Planejamento","uc":"6573919-1","uc_clean":"65739191","ope":"AD","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"40","local":"40 - GDLE - Gerencia Distrital Leste","uc":"6311245-1","uc_clean":"63112451","ope":"AD","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"42","local":"42 - GDNO - Gerencia Distrital Norte","uc":"7253431-1","uc_clean":"72534311","ope":"AD","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"45","local":"45 - CSST - Comite de Saude e Seguranca no Trabalho","uc":"6405398-9","uc_clean":"64053989","ope":"AD","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"48","local":"48 - GSUP - Gerencia de Suprimento Almox Central","uc":"6405411-0","uc_clean":"64054110","ope":"AD","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"49","local":"49 - GDSU - Gerencia Distrital Sul","uc":"6405423-3","uc_clean":"64054233","ope":"AD","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"52","local":"52 - GCLI - Gerencia de Clientes","uc":"6405448-9","uc_clean":"64054489","ope":"AD","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"53","local":"53 - GDSU - Gerencia Distrital Sul","uc":"6715067-5","uc_clean":"67150675","ope":"AD","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"81","local":"81 - C-PCENTRO - Coord Pluvial Centro","uc":"2898103-1","uc_clean":"28981031","ope":"PL","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"82","local":"82 - C-PREMOLD - Coord de Pre Moldados","uc":"4353178-4","uc_clean":"43531784","ope":"PL","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"83","local":"83 - C-PNORTE 1 - Coord Pluvial Zona Norte 1","uc":"2451660-1","uc_clean":"24516601","ope":"PL","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"84","local":"84 - C-PNORTE 2 - Coord Pluvial Zona Norte 2","uc":"2451624-4","uc_clean":"24516244","ope":"PL","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"85","local":"85 - C-LESTE - Coord Pluvial Leste","uc":"2453885-0","uc_clean":"24538850","ope":"PL","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"86","local":"86 - C-SUL - Coord Pluvial Zona Sul","uc":"811195-2","uc_clean":"8111952","ope":"PL","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3001","local":"3001 - EBAP 1 - Rodoviaria","uc":"5135119-6","uc_clean":"51351196","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3002","local":"3002 - EBAP 2 - Sao Joao","uc":"5135880-8","uc_clean":"51358808","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3003","local":"3003 - EBAP 3 - Sao Pedro","uc":"5984506-6","uc_clean":"59845066","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3004","local":"3004 - EBAP 4 - Pq Nautico","uc":"4031196-1","uc_clean":"40311961","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3005","local":"3005 - EBAP 5 - Adelino Machado Souza","uc":"5526505-7","uc_clean":"55265057","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3006","local":"3006 - EBAP 6 - Trevo","uc":"5133174-8","uc_clean":"51331748","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3007","local":"3007 - EBAP 7 - SILVIO BRUM","uc":"3282370-3","uc_clean":"32823703","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3008","local":"3008 - EBAP 8 - VILA FARRAPOS","uc":"7256000-2","uc_clean":"72560002","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3009","local":"3009 - EBAP 9 - Sarandi","uc":"5871735-8","uc_clean":"58717358","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3010","local":"3010 - EBAP 10 - Abilio Fernandes","uc":"3848249-5","uc_clean":"38482495","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3012","local":"3012 - EBAP 12 - Parque Gigante","uc":"6566796-4","uc_clean":"65667964","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3013","local":"3013 - EBAP 13 - Parque Marinha","uc":"6571662-1","uc_clean":"65716621","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3014","local":"3014 - EBAP 14 - Pol Federal","uc":"6573829-2","uc_clean":"65738292","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3015","local":"3015 - EBAP 15 - Erico Verissimo","uc":"6565024-7","uc_clean":"65650247","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3016","local":"3016 - EBAP 16 - Rotula Cuias","uc":"4027614-7","uc_clean":"40276147","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3017","local":"3017 - EBAP 17 - Maua","uc":"2458617-0","uc_clean":"24586170","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3018","local":"3018 - EBAP 18 - Centro","uc":"2458603-0","uc_clean":"24586030","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3019","local":"3019 - EBAP 19 - STA TEREZINHA","uc":"5936702-4","uc_clean":"59367024","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3020","local":"3020 - EBAP 20 - VILA MINUANO","uc":"7268941-2","uc_clean":"72689412","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3021","local":"3021 - EBAP 21 - ASA BRANCA","uc":"6822237-8","uc_clean":"68222378","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3022","local":"3022 - EBAP 22 - Trincheira Ceará","uc":"99228341-8","uc_clean":"992283418","ope":"PL","med":"BT"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3023","local":"3023 - EBAP 11 A - Coronel Claudino","uc":"99629081-8","uc_clean":"996290818","ope":"PL","med":"HV"},
+  {"sistema":"SISTEMA TRISTEZA","codigo":"3024","local":"3024 - EBAP 11 B - Icaraí  II","uc":"99376500-9","uc_clean":"993765009","ope":"PL","med":"HV"}
+];
+
+const CONS_META = {
+  "5":{"local":"DVA","endereco":"Rua São Francisco, 246","demanda":"80","uc":"6319360-4","contrato":"25950"},
+  "12":{"local":"DVI","endereco":"Rua João Alfredo, 187","demanda":"56","uc":"6335038-6","contrato":"26161"},
+  "16":{"local":"GATE (DVP)","endereco":"Rua Barão de Cerro Largo, 600","demanda":"130","uc":"6309797-4","contrato":"25691"},
+  "34":{"local":"DVM / Hidrômetro","endereco":"Av. Princesa Isabel, 1237","demanda":"136","uc":"6319320-5","contrato":"25951"},
+  "38":{"local":"DVE-DVM-Veículos e DVC-Leitura","endereco":"Rua Dr. Gastão Rhodes, 187","demanda":"128","uc":"6319255-1","contrato":"25952"},
+  "39":{"local":"DD - GPLA - GEPO - GLIC","endereco":"Rua Domingos Crescêncio, 1054","demanda":"220","uc":"6316844-8","contrato":"25953"},
+  "40":{"local":"GDLE - Gerência Distrital Leste","endereco":"Rua Prof. C. Fischer, 2402","demanda":"90","uc":"6311245-1","contrato":"25733"},
+  "42":{"local":"Gráfica/Conservação","endereco":"Rua Cancio Gomes, 39","demanda":"97","uc":"6345117-4","contrato":"26311"},
+  "100":{"local":"ETA Moinhos de Vento","endereco":"R. Fernando Gomes, 183","demanda":"580","uc":"5114373-9","contrato":"26276"},
+  "101":{"local":"EBAB Moinhos de Vento","endereco":"Rua Voluntários da Pátria, nº 2100","demanda":"1700","uc":"5110739-2","contrato":"26089"},
+  "103":{"local":"EBAT Bordini","endereco":"R. Coronel Bordini, 1703","demanda":"80","uc":"6343727-9","contrato":"26306"},
+  "200":{"local":"ETA São João","endereco":"Rua Coronel Camisão, 250","demanda":"176","uc":"6347245-7","contrato":"26395"},
+  "201":{"local":"EBAB São João","endereco":"Rua Voluntários da Pátria, nº 2100 APTO 01","demanda":"1800","uc":"5118376-5","contrato":"26093"},
+  "202":{"local":"EBAT Luzitana","endereco":"R. Luzitana, 571","demanda":"186","uc":"6338435-3","contrato":"26230"},
+  "300":{"local":"ETA Menino Deus","endereco":"Rua Barão de Guaiba, nº 781","demanda":"1270","uc":"5114354-2","contrato":"24118"},
+  "301":{"local":"EBAB Menino Deus","endereco":"Av. Borges de Medeiros, nº 2003","demanda":"820","uc":"5114334-8","contrato":"25779"},
+  "400":{"local":"ETA Belém Novo","endereco":"Rua Florêncio Farias, nº 227","demanda":"1170","uc":"5262867-1","contrato":"21349"},
+  "401":{"local":"EBAB Belém Novo","endereco":"Avenida Beira Rio, nº 826","demanda":"215","uc":"6312169-7","contrato":"25778"},
+  "600":{"local":"EBAB / ETA Ilha da Pintada","endereco":"Rua Capitão Coelho, 115","demanda":"55","uc":"6314822-6","contrato":"25938"},
+  "700":{"local":"ETA Tristeza","endereco":"Praça Araé, 501","demanda":"70","uc":"6309374-0","contrato":"25687"},
+  "701":{"local":"EBAB Tristeza","endereco":"Av. Guaíba, 2201","demanda":"470","uc":"5286366-2","contrato":"20875"},
+  "4150":{"local":"ETE Serraria","endereco":"Estrada da Serraria 2601","demanda":"1250","uc":"6381134-1","contrato":"27472"},
+  "4156":{"local":"EBE Cristal","endereco":"Av. Diário de Notícias, 760","demanda":"700","uc":"6221087-4","contrato":"23718"},
+  "6102":{"local":"EBE 2S","endereco":"Travessa Otaviano de Oliveira, 55","demanda":"128","uc":"6100048-5","contrato":"21377"},
+  "6104":{"local":"EBE 4 S","endereco":"EBE 4 S","demanda":"128","uc":"6310234-0","contrato":"25702"},
+  "6105":{"local":"EBE 5S","endereco":"Avenida Araranguá, 20","demanda":"170","uc":"6310199-8","contrato":"25710"}
+};
+
+const MESES_LISTA = ["JAN","FEV","MAR","ABR","MAIO","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+const MESES_ABAS  = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+const MAP_MES_NUM = {
+  "01":"JAN","02":"FEV","03":"MAR","04":"ABR","05":"MAIO","06":"JUN",
+  "07":"JUL","08":"AGO","09":"SET","10":"OUT","11":"NOV","12":"DEZ"
+};
+const MAP_MES_TXT = {
+  "jan":"JAN","fev":"FEV","mar":"MAR","abr":"ABR","mai":"MAIO","maio":"MAIO",
+  "jun":"JUN","jul":"JUL","ago":"AGO","set":"SET","out":"OUT","nov":"NOV","dez":"DEZ"
+};
+
+let invoices = [];
+
+function logMsg(msg) {
+  const box = document.getElementById('logBox');
+  box.innerHTML = `<div>• ${msg}</div>` + box.innerHTML;
+}
+
+function parseBRNumber(str) {
+  if (!str) return 0;
+  let s = String(str).replace(/\s+/g, '').replace('R$', '');
+  // Se tiver vírgula e ponto, ponto é milhar e vírgula é decimal
+  if (s.includes(',') && s.includes('.')) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (s.includes(',')) {
+    s = s.replace(',', '.');
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : Math.round(n * 100) / 100;
+}
+
+// Drag & Drop handlers
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files.length) handleFiles(e.target.files);
+  fileInput.value = '';
+});
+
+async function handleFiles(fileList) {
+  for (const file of fileList) {
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      logMsg(`Ignorado (não é PDF): ${file.name}`);
+      continue;
+    }
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(i => i.str).join(' ');
+        fullText += '\n' + pageText;
+      }
+      const parsed = parseCeeeInvoice(fullText, file.name);
+      // Substitui se já existir mesmo código + mês + ano
+      const existingIdx = invoices.findIndex(x => x.codigo === parsed.codigo && x.mes === parsed.mes && x.ano === parsed.ano);
+      if (existingIdx >= 0) invoices[existingIdx] = parsed;
+      else invoices.push(parsed);
+
+      logMsg(`Lido com sucesso: <b>${file.name}</b> → Estação <b>${parsed.codigo}</b> (${parsed.mes}/${parsed.ano}) — Total R$ ${parsed.totalFatura.toFixed(2)}`);
+    } catch (err) {
+      console.error(err);
+      logMsg(`Erro ao ler ${file.name}: ${err.message}`);
+    }
+  }
+  renderTable();
+}
+
+function parseCeeeInvoice(text, fileName) {
+  const clean = text.replace(/\s+/g, ' ');
+
+  // 1. Extrair código e mês/ano do nome do arquivo (ex: 6102-out25.pdf)
+  let codeFromFile = '';
+  let mesFromFile = '';
+  let anoFromFile = '';
+  const fnMatch = fileName.match(/^(\d+[A-Z0-9]*)\s*[-_]\s*([a-zA-ZçÇ]{3,4})(\d{2,4})/i);
+  if (fnMatch) {
+    codeFromFile = fnMatch[1].toUpperCase();
+    const mKey = fnMatch[2].toLowerCase();
+    mesFromFile = MAP_MES_TXT[mKey] || '';
+    anoFromFile = fnMatch[3].length === 2 ? '20' + fnMatch[3] : fnMatch[3];
+  }
+
+  // 2. Extrair Número da UC do texto
+  let ucFound = '';
+  const ucMatch = clean.match(/N[úu]mero\s+da\s+UC\s+(\d{6,12})/i);
+  if (ucMatch) ucFound = ucMatch[1];
+
+  // 3. Vincular com o catálogo DMAE (por código do arquivo ou UC do PDF)
+  let station = null;
+  if (codeFromFile) {
+    station = STATIONS_CATALOG.find(s => s.codigo.toUpperCase() === codeFromFile);
+  }
+  if (!station && ucFound) {
+    station = STATIONS_CATALOG.find(s => s.uc_clean === ucFound || s.uc_clean.startsWith(ucFound));
+  }
+
+  const codigo = station ? station.codigo : (codeFromFile || 'S/C');
+  const local = station ? station.local : (codeFromFile ? `${codeFromFile}-Estação DMAE` : 'Estação não identificada');
+  const ucFormatted = station ? station.uc : ucFound;
+
+  // 4. Conta mês (MM/YYYY)
+  let mes = mesFromFile || 'OUT';
+  let ano = anoFromFile || document.getElementById('anoRef').value;
+  const contaMesMatch = clean.match(/Conta\s+m[êe]s\s+(\d{2})\/(\d{4})/i);
+  if (contaMesMatch) {
+    mes = MAP_MES_NUM[contaMesMatch[1]] || mes;
+    ano = contaMesMatch[2];
+  }
+
+  // 5. Período de Leitura (Leitura Anterior DD/MM/YYYY Leitura Atual DD/MM/YYYY)
+  let periodo = '';
+  const leitMatch = clean.match(/Leitura\s+Anterior\s+(\d{2}\/\d{2})\/\d{4}\s+Leitura\s+Atual\s+(\d{2}\/\d{2})\/\d{4}/i)
+                 || clean.match(/(\d{2}\/\d{2})\/\d{4}\s+(\d{2}\/\d{2})\/\d{4}\s+\d{2}\s+\d{2}\/\d{2}\/\d{4}/);
+  if (leitMatch) {
+    periodo = `${leitMatch[1]}-${leitMatch[2]}`;
+  }
+
+  // 6. Extrair itens da fatura
+  function matchItemVal(regex) {
+    const m = clean.match(regex);
+    return m ? parseBRNumber(m[1]) : 0;
+  }
+  function matchItemQtyAndVal(regex) {
+    const m = clean.match(regex);
+    if (!m) return { qty: 0, val: 0 };
+    return { qty: parseBRNumber(m[1]), val: parseBRNumber(m[2]) };
+  }
+
+  // Consumo Ponta (TUSD + TE)
+  const ptTusd = matchItemQtyAndVal(/TUSD\s+ENERGIA\s+PONTA\s+TUSD\s+kWh\s+([\d.,]+)\s+[\d.,]+\s+([\d.,]+)/i);
+  const ptTe   = matchItemQtyAndVal(/TUSD\s+ENERGIA\s+PONTA\s+TE\s+kWh\s+([\d.,]+)\s+[\d.,]+\s+([\d.,]+)/i);
+  const consPontaKwh = ptTusd.qty || ptTe.qty;
+  const consPontaRs  = Math.round((ptTusd.val + ptTe.val) * 100) / 100;
+
+  // Consumo Fora Ponta (TUSD + TE)
+  const fpTusd = matchItemQtyAndVal(/TUSD\s+ENERGIA\s+FORA\s+DE\s+PONTA\s+TUSD\s+kWh\s+([\d.,]+)\s+[\d.,]+\s+([\d.,]+)/i);
+  const fpTe   = matchItemQtyAndVal(/TUSD\s+ENERGIA\s+FORA\s+DE\s+PONTA\s+TE\s+kWh\s+([\d.,]+)\s+[\d.,]+\s+([\d.,]+)/i);
+  const consFpKwh = fpTusd.qty || fpTe.qty;
+  const consFpRs  = Math.round((fpTusd.val + fpTe.val) * 100) / 100;
+
+  // Demanda (R$) = DEMANDA DE TUSD + DEMANDA DE TUSD ISENTA ICMS
+  const demTusd   = matchItemQtyAndVal(/DEMANDA\s+DE\s+TUSD\s+KW\s+([\d.,]+)\s+[\d.,]+\s+([\d.,]+)/i);
+  const demIsenta = matchItemQtyAndVal(/DEMANDA\s+DE\s+TUSD\s+ISENTA\s+ICMS\s+KW\s+([\d.,]+)\s+[\d.,]+\s+([\d.,]+)/i);
+  const demandaRs = Math.round((demTusd.val + demIsenta.val) * 100) / 100;
+
+  // Demanda kW Ponta e Fora Ponta (Resumo / Histórico)
+  let demPontaKw = 0, demFpKw = 0;
+  const demMaxFp = clean.match(/Dem\.\s*M[áa]x\.?\s*F\.?\s*Ponta\s*\(KW\):\s*([\d.,]+)/i);
+  const demMaxPt = clean.match(/Dem\.\s*M[áa]x\.?\s*Ponta\s*\(KW\):\s*([\d.,]+)/i);
+  if (demMaxFp) demFpKw = parseBRNumber(demMaxFp[1]);
+  if (demMaxPt) demPontaKw = parseBRNumber(demMaxPt[1]);
+  if (!demFpKw) demFpKw = Math.max(demTusd.qty, demIsenta.qty);
+
+  // Reativo Excedente
+  const reatFp = matchItemVal(/CONSUMO\s+REAT\.?\s*FORA\s+PONTA\s+TE\s+kvarh\s+[\d.,]+\s+[\d.,]+\s+([\d.,]+)/i);
+  const reatPt = matchItemVal(/CONSUMO\s+REAT\.?\s*PONTA\s+TE\s+kvarh\s+[\d.,]+\s+[\d.,]+\s+([\d.,]+)/i);
+  const reativoRs = Math.round((reatFp + reatPt) * 100) / 100;
+
+  // Escassez Hídrica / Bandeira
+  const escassez = matchItemVal(/ESCASSEZ\s+HIDRICA[^\d]+kWh\s+[\d.,]+\s+[\d.,]+\s+([\d.,]+)/i);
+  const bandeira = matchItemVal(/ADICIONAL\s+BANDEIRA[^\d]+kWh\s+[\d.,]+\s+[\d.,]+\s+([\d.,]+)/i);
+
+  // Subsídios Tarifários (Brutos na coluna Outros, Líquidos na coluna Créditos, conforme padrão da planilha DMAE)
+  const subIsentaBruto = matchItemVal(/SUBSIDIO\s+TARIFARIO\s+DEM\s+ISENTA\s+TUSD\s+UN\s+[\d.,]+\s+[\d.,]+\s+([\d.,]+)/i);
+  const subTusdBruto   = matchItemVal(/SUBSIDIO\s+TARIFARIO\s+TUSD\s+UN\s+[\d.,]+\s+[\d.,]+\s+([\d.,]+)/i);
+  const outrosRs = Math.round((subIsentaBruto + subTusdBruto + escassez) * 100) / 100;
+
+  const subLiq1 = Math.abs(matchItemVal(/SUBSIDIO\s+TARIFARIO\s+LIQUIDO\s+(-?[\d.,]+)/i));
+  const subLiq2 = Math.abs(matchItemVal(/SUBSIDIO\s+TARIFARIO\s+LIQDO\s+DEM\s+ISENTA\s+(-?[\d.,]+)/i));
+  const irpj1   = Math.abs(matchItemVal(/IMP\.RET\.\s*IRPJ\s*\(1,20%\)\s+(-?[\d.,]+)/i));
+  const irpj2   = Math.abs(matchItemVal(/IMP\.RET\.\s*IRPJ\s*\(4,80%\)\s+(-?[\d.,]+)/i));
+  const creditosRs = Math.round((subLiq1 + subLiq2 + irpj1 + irpj2) * 100) / 100;
+
+  // CIP Municipal (Iluminação Pública)
+  const cipRs = matchItemVal(/CIP\s+MUNICIPAL\s+([\d.,]+)/i);
+
+  // Total a pagar
+  let totalFatura = matchItemVal(/Total\s+a\s+pagar\s+R\$\s*([\d.,]+)/i);
+  if (!totalFatura) totalFatura = matchItemVal(/TOTAL\s+([\d.,]+)\s+Grandezas/i);
+
+  return {
+    fileName,
+    codigo,
+    local,
+    uc: ucFormatted,
+    mes,
+    ano,
+    periodo,
+    demPontaKw,
+    demFpKw,
+    demConvKw: Math.max(demPontaKw, demFpKw),
+    demandaRs,
+    consPontaKwh,
+    consFpKwh,
+    consTotalKwh: Math.round((consPontaKwh + consFpKwh) * 100) / 100,
+    consPontaRs,
+    consFpRs,
+    consTotalRs: Math.round((consPontaRs + consFpRs) * 100) / 100,
+    reativoRs,
+    cipRs,
+    bandeiraRs: bandeira,
+    outrosRs,
+    creditosRs,
+    totalFatura
+  };
+}
+
+function updateField(idx, field, val) {
+  if (['codigo','local','uc','mes','ano','periodo'].includes(field)) {
+    invoices[idx][field] = val.trim();
+  } else {
+    invoices[idx][field] = parseBRNumber(val);
+    // Recalcula totais derivados
+    invoices[idx].demConvKw = Math.max(invoices[idx].demPontaKw, invoices[idx].demFpKw);
+    invoices[idx].consTotalKwh = Math.round((invoices[idx].consPontaKwh + invoices[idx].consFpKwh) * 100) / 100;
+    invoices[idx].consTotalRs  = Math.round((invoices[idx].consPontaRs + invoices[idx].consFpRs) * 100) / 100;
+  }
+  renderTable();
+}
+
+function removeRow(idx) {
+  invoices.splice(idx, 1);
+  renderTable();
+}
+
+function clearAll() {
+  invoices = [];
+  renderTable();
+  logMsg('Lista limpa.');
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tbody');
+  const filtro = document.getElementById('filtroMes').value;
+  const list = invoices
+    .map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => filtro === 'TODOS' || item.mes === filtro);
+
+  document.getElementById('countBadge').textContent = `${invoices.length} fatura(s) carregada(s)`;
+  const soma = invoices.reduce((acc, x) => acc + (x.totalFatura || 0), 0);
+  document.getElementById('totalBadge').textContent = `Total Geral: R$ ${soma.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="22" style="text-align:center; padding:24px; color:#64748b;">Nenhum registro para exibir.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = list.map(({ item, idx }) => `
+    <tr>
+      <td title="${item.fileName}">${item.fileName}</td>
+      <td><input class="code" value="${item.codigo}" onchange="updateField(${idx},'codigo',this.value)" /></td>
+      <td><input class="txt" style="width:160px" value="${item.local}" onchange="updateField(${idx},'local',this.value)" /></td>
+      <td><input class="txt" style="width:95px" value="${item.uc}" onchange="updateField(${idx},'uc',this.value)" /></td>
+      <td>
+        <select onchange="updateField(${idx},'mes',this.value)">
+          ${MESES_LISTA.map(m => `<option value="${m}" ${item.mes===m?'selected':''}>${m}</option>`).join('')}
+        </select>
+      </td>
+      <td><input style="width:55px" value="${item.ano}" onchange="updateField(${idx},'ano',this.value)" /></td>
+      <td><input class="txt" style="width:90px" value="${item.periodo}" onchange="updateField(${idx},'periodo',this.value)" /></td>
+      <td><input value="${item.demPontaKw}" onchange="updateField(${idx},'demPontaKw',this.value)" /></td>
+      <td><input value="${item.demFpKw}" onchange="updateField(${idx},'demFpKw',this.value)" /></td>
+      <td><input value="${item.demandaRs}" onchange="updateField(${idx},'demandaRs',this.value)" /></td>
+      <td><input value="${item.consPontaKwh}" onchange="updateField(${idx},'consPontaKwh',this.value)" /></td>
+      <td><input value="${item.consFpKwh}" onchange="updateField(${idx},'consFpKwh',this.value)" /></td>
+      <td style="font-weight:600; text-align:right;">${item.consTotalKwh}</td>
+      <td><input value="${item.consPontaRs}" onchange="updateField(${idx},'consPontaRs',this.value)" /></td>
+      <td><input value="${item.consFpRs}" onchange="updateField(${idx},'consFpRs',this.value)" /></td>
+      <td style="font-weight:600; text-align:right;">${item.consTotalRs.toFixed(2)}</td>
+      <td><input value="${item.reativoRs}" onchange="updateField(${idx},'reativoRs',this.value)" /></td>
+      <td><input value="${item.cipRs}" onchange="updateField(${idx},'cipRs',this.value)" /></td>
+      <td><input value="${item.outrosRs}" onchange="updateField(${idx},'outrosRs',this.value)" /></td>
+      <td><input value="${item.creditosRs}" onchange="updateField(${idx},'creditosRs',this.value)" /></td>
+      <td><input style="font-weight:700; background:#f0fdf4;" value="${item.totalFatura}" onchange="updateField(${idx},'totalFatura',this.value)" /></td>
+      <td><button class="btn btn-danger" onclick="removeRow(${idx})">X</button></td>
+    </tr>
+  `).join('');
+}
+
+// =========================================================================
+// PLANILHA 1: ConsEn HV (Uma aba por estação / código, padrão DMAE)
+// =========================================================================
+function downloadConsEn() {
+  if (!invoices.length) {
+    alert('Anexe pelo menos uma conta de luz antes de baixar.');
+    return;
+  }
+  const ano = document.getElementById('anoRef').value || '2025';
+  const wb = XLSX.utils.book_new();
+
+  // Agrupa faturas por código de estação
+  const byCode = {};
+  invoices.forEach(inv => {
+    if (!byCode[inv.codigo]) byCode[inv.codigo] = [];
+    byCode[inv.codigo].push(inv);
+  });
+
+  Object.keys(byCode).sort((a, b) => Number(a) - Number(b)).forEach(code => {
+    const meta = CONS_META[code] || {};
+    const stCat = STATIONS_CATALOG.find(s => s.codigo === code) || {};
+    const sample = byCode[code][0];
+
+    const rows = [
+      ["PREFEITURA MUNICIPAL DE PORTO ALEGRE"],
+      ["DEPARTAMENTO MUNICIPAL DE ÁGUA E ESGOTOS"],
+      ["CONTROLE DE CONSUMOS DE ENERGIA ELÉTRICA"],
+      [],
+      ["CÓDIGO", "", "ENTRADA DE ENERGIA", "", "", "", "", "", "", "", "DEMANDA CONTRATADA ATUAL", "", "", "", "", "", "OBS.:"],
+      [code, "", "LOCAL", "", meta.local || stCat.local || sample.local, "", "", "", "", "", "PONTA/FORA DA PONTA", "", "", "CONVENCIONAL"],
+      ["", "", "ENDEREÇO", "", meta.endereco || "", "", "", "", "", "", "", "", "", meta.demanda || ""],
+      [],
+      ["NÚMERO INSTALAÇÃO (UC)", meta.uc || sample.uc, "NÚMERO CONTRATO", meta.contrato || "", "TIPO", stCat.med || "HV"],
+      [],
+      [ano, "", "Demanda - kW", "", "", "Demanda - R$", "", "Fator de", "Consumo (kWh)", "", "", "Consumo - R$", "", "", "Reativo", "Período", "Ultrapas.", "Iluminação", "Multa por", "Bandeira", "Outros", "Créditos", "TOTAL DA"],
+      ["", "Horosazonal", "", "Conven-", "Horosazonal", "", "", "Potência", "Horosazonal", "", "", "Horosazonal", "", "", "B.F.P.", "leitura", "(R$)", "Pública", "atraso pagam.", "(R$)", "(R$)", "(R$)", "FATURA"],
+      ["Mês", "Ponta", "F.Ponta", "cional", "Ponta", "F.Ponta", "Total", "", "Ponta", "F.Ponta", "Total", "Ponta", "F.Ponta", "Total", "(R$)", "", "", "(R$)", "(R$)", "", "", "", "(R$)"]
+    ];
+
+    const startRowExcel = 14; // Linha 14 no Excel (índice 13 base 0)
+    MESES_LISTA.forEach(m => {
+      const inv = byCode[code].find(x => x.mes === m && String(x.ano) === String(ano))
+               || byCode[code].find(x => x.mes === m);
+      if (inv) {
+        rows.push([
+          m,
+          inv.demPontaKw || null,
+          inv.demFpKw || null,
+          inv.demConvKw || 0,
+          null,
+          null,
+          inv.demandaRs || null,
+          null,
+          inv.consPontaKwh || null,
+          inv.consFpKwh || null,
+          inv.consTotalKwh || 0,
+          inv.consPontaRs || null,
+          inv.consFpRs || null,
+          inv.consTotalRs || 0,
+          inv.reativoRs || null,
+          inv.periodo || "",
+          null,
+          inv.cipRs || null,
+          null,
+          inv.bandeiraRs || null,
+          inv.outrosRs || null,
+          inv.creditosRs || null,
+          inv.totalFatura || 0
+        ]);
+      } else {
+        rows.push([m, null, null, 0, null, null, null, null, null, null, 0, null, null, 0, null, "", null, null, null, null, null, null, 0]);
+      }
+    });
+
+    const endRowExcel = startRowExcel + 11; // Linha 25
+    // Linhas de resumo: MÁXIMO, MÉDIA, TOTAL/ANO
+    const colsLetters = ["B","C","D","E","F","G","H","I","J","K","L","M","N","O","Q","R","S","T","U","V","W"];
+    const rowMax = ["MÁXIMO"];
+    const rowAvg = ["MÉDIA"];
+    const rowSum = ["TOTAL/ANO"];
+
+    for (let c = 1; c <= 22; c++) {
+      if (c === 15) { // Coluna P (Período leitura)
+        rowMax.push(""); rowAvg.push(""); rowSum.push("");
+        continue;
+      }
+      const colLet = XLSX.utils.encode_col(c);
+      rowMax.push({ f: `MAX(${colLet}${startRowExcel}:${colLet}${endRowExcel})` });
+      rowAvg.push({ f: `AVERAGE(${colLet}${startRowExcel}:${colLet}${endRowExcel})` });
+      rowSum.push({ f: `SUM(${colLet}${startRowExcel}:${colLet}${endRowExcel})` });
+    }
+    rows.push(rowMax, rowAvg, rowSum);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+      {wch:12},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:11},{wch:8},
+      {wch:9},{wch:9},{wch:11},{wch:10},{wch:10},{wch:11},{wch:9},{wch:13},
+      {wch:9},{wch:10},{wch:10},{wch:9},{wch:11},{wch:11},{wch:13}
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, String(code).substring(0, 31));
+  });
+
+  XLSX.writeFile(wb, `ConsEn_HV_${ano}.xlsx`);
+}
+
+// =========================================================================
+// PLANILHA 2: Custo Mensal (Uma aba por mês: jan..dez, padrão DMAE)
+// =========================================================================
+function downloadCustoMensal() {
+  if (!invoices.length) {
+    alert('Anexe pelo menos uma conta de luz antes de baixar.');
+    return;
+  }
+  const ano = document.getElementById('anoRef').value || '2025';
+  const wb = XLSX.utils.book_new();
+
+  const nomesMesesExtenso = [
+    "JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO",
+    "JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"
+  ];
+
+  MESES_ABAS.forEach((aba, mIdx) => {
+    const mesCod = MESES_LISTA[mIdx];
+    const mesExtenso = nomesMesesExtenso[mIdx];
+
+    const rows = [
+      [mesExtenso, ano, "", "", "", "", "", "PREFEITURA MUNICIPAL DE PORTO ALEGRE"],
+      ["", "", "", "", "", "", "", "DEPARTAMENTO MUNICIPAL DE ÁGUA E ESGOTOS"],
+      ["", "", "", "", "", "", "", "GERÊNCIA DE MANUTENÇÃO INDUSTRIAL"],
+      [],
+      ["", "", "", "", "Demanda - kW", "", "", "Demanda - (R$)", "", "", "Fator de", "Consumo - (kWh)", "", "", "Consumo - (R$)", "", "", "Reativo", "Período", "Ultrapas-", "Iluminação", "Multa por", "Bandeira", "Outros", "Créditos", "TOTAL DA"],
+      ["LOCAL", "NÚMERO", "OPE", "MED", "Horosazonal", "", "Conven-", "Horosazonal", "", "", "Potência", "Horosazonal", "", "", "Horosazonal", "", "", "B.F.P.", "leitura", "sagem", "Pública", "atraso pagam.", "(R$)", "(R$)", "(R$)", "FATURA"],
+      ["", "INSTALAÇÃO", "", "", "Ponta", "F. Ponta", "cional", "Ponta", "F. Ponta", "Total", "", "Ponta", "F. Ponta", "Total", "Ponta", "F. Ponta", "Total", "(R$)", "", "(R$)", "(R$)", "(R$)", "", "", "", "(R$)"]
+    ];
+
+    let currentSystem = "";
+    STATIONS_CATALOG.forEach(st => {
+      if (st.sistema !== currentSystem) {
+        currentSystem = st.sistema;
+        rows.push([]);
+        rows.push([currentSystem]);
+      }
+
+      const inv = invoices.find(x =>
+        (x.codigo === st.codigo || x.uc.replace(/\D/g,'') === st.uc_clean) &&
+        x.mes === mesCod &&
+        String(x.ano) === String(ano)
+      ) || invoices.find(x =>
+        (x.codigo === st.codigo || x.uc.replace(/\D/g,'') === st.uc_clean) &&
+        x.mes === mesCod
+      );
+
+      if (inv) {
+        rows.push([
+          st.local,
+          st.uc,
+          st.ope,
+          st.med,
+          inv.demPontaKw || null,
+          inv.demFpKw || null,
+          inv.demConvKw || null,
+          null,
+          null,
+          inv.demandaRs || null,
+          null,
+          inv.consPontaKwh || null,
+          inv.consFpKwh || null,
+          inv.consTotalKwh || null,
+          inv.consPontaRs || null,
+          inv.consFpRs || null,
+          inv.consTotalRs || null,
+          inv.reativoRs || null,
+          inv.periodo || "",
+          null,
+          inv.cipRs || null,
+          null,
+          inv.bandeiraRs || null,
+          inv.outrosRs || null,
+          inv.creditosRs || null,
+          inv.totalFatura || null
+        ]);
+      } else {
+        rows.push([st.local, st.uc, st.ope, st.med]);
+      }
+    });
+
+    // Adiciona eventuais faturas avulsas cujo código não estava no catálogo padrão
+    const extraInvs = invoices.filter(inv =>
+      inv.mes === mesCod &&
+      !STATIONS_CATALOG.some(st => st.codigo === inv.codigo || st.uc_clean === inv.uc.replace(/\D/g,''))
+    );
+    if (extraInvs.length) {
+      rows.push([]);
+      rows.push(["OUTRAS ESTAÇÕES IMPORTADAS"]);
+      extraInvs.forEach(inv => {
+        rows.push([
+          inv.local, inv.uc, "", "HV",
+          inv.demPontaKw, inv.demFpKw, inv.demConvKw, null, null, inv.demandaRs, null,
+          inv.consPontaKwh, inv.consFpKwh, inv.consTotalKwh,
+          inv.consPontaRs, inv.consFpRs, inv.consTotalRs,
+          inv.reativoRs, inv.periodo, null, inv.cipRs, null, inv.bandeiraRs, inv.outrosRs, inv.creditosRs, inv.totalFatura
+        ]);
+      });
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+      {wch:36},{wch:14},{wch:5},{wch:5},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:11},
+      {wch:8},{wch:9},{wch:9},{wch:11},{wch:10},{wch:10},{wch:11},{wch:9},{wch:13},
+      {wch:9},{wch:10},{wch:10},{wch:9},{wch:11},{wch:11},{wch:13}
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, aba);
+  });
+
+  XLSX.writeFile(wb, `Custo_Mensal_${ano}.xlsx`);
+}
+</script>
+</body>
+</html>
